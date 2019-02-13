@@ -1,29 +1,89 @@
 #include <gtk/gtk.h>
+#include <tag.h>
+#include <tbytevector.h>
 
+#include <mpegfile.h>
+
+#include <id3v2tag.h>
+#include <id3v2frame.h>
+#include <id3v2header.h>
+
+#include <id3v1tag.h>
+
+#include <apetag.h>
+#include <fileref.h>
 /* I'm going to be lazy and use some global variables to
  * store the position of the widget within the fixed
  * container */
 gint x = 50;
 gint y = 50;
-GtkWidget *window;
+GtkWidget *window, *titleEntry, *artistEntry, *ablumEntry, *yearEntry, *trackEntry, *genreEntry, *commentEntry, *logLabel;
 /* This callback function moves the button to a new position
  * in the Fixed container. */
 
 gboolean on_popup_focus_out(GtkWidget *widget,
-                   GdkEventFocus *event,
-                   gpointer data)
+                            GdkEventFocus *event,
+                            gpointer data)
 {
     gtk_widget_destroy(widget);
     return TRUE;
 }
 
 gboolean closeAboutDialog(GtkWidget *widget,
-                   gpointer data)
+                          gpointer data)
 {
-   gtk_widget_destroy (GTK_WIDGET(data));
+    gtk_widget_destroy(GTK_WIDGET(data));
     return TRUE;
 }
 
+void openDialog()
+{
+    GtkWidget *dialog;
+    GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_OPEN;
+    gint res;
+
+    dialog = gtk_file_chooser_dialog_new("Open File",
+                                         GTK_WINDOW(window),
+                                         action, "_Cancel",
+                                         GTK_RESPONSE_CANCEL, "_Open",
+                                         GTK_RESPONSE_ACCEPT,
+                                         NULL);
+
+    res = gtk_dialog_run(GTK_DIALOG(dialog));
+    if (res == GTK_RESPONSE_ACCEPT)
+    {
+        char *filename;
+        GtkFileChooser *chooser = GTK_FILE_CHOOSER(dialog);
+        filename = gtk_file_chooser_get_filename(chooser);
+        //  g_print(filename);
+
+        TagLib::FileRef f(filename);
+        if (!f.isNull())
+        {
+            gtk_entry_set_text(GTK_ENTRY(titleEntry), f.tag()->title().toCString());
+            gtk_entry_set_text(GTK_ENTRY(artistEntry), f.tag()->artist().toCString());
+            gtk_entry_set_text(GTK_ENTRY(ablumEntry), f.tag()->album().toCString());
+            gtk_entry_set_text(GTK_ENTRY(yearEntry), std::to_string(f.tag()->year()).c_str());
+            gtk_entry_set_text(GTK_ENTRY(trackEntry), std::to_string(f.tag()->track()).c_str());
+            gtk_entry_set_text(GTK_ENTRY(genreEntry), f.tag()->genre().toCString());
+            gtk_entry_set_text(GTK_ENTRY(commentEntry), f.tag()->comment().toCString());
+
+            const char *format = "<b>%s</b>";
+            char *markup = g_markup_printf_escaped(format,"Tags Loaded");
+            gtk_label_set_markup(GTK_LABEL(logLabel), markup);
+        }
+        else
+        {
+           
+            const char *format = "<b>%s</b>";
+            char *markup = g_markup_printf_escaped(format,"Error Loading Tags");
+            gtk_label_set_markup(GTK_LABEL(logLabel), markup);
+            
+        }
+    }
+
+    gtk_widget_destroy(dialog);
+}
 
 static void printz()
 {
@@ -32,7 +92,7 @@ static void printz()
 
     popup_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(GTK_WINDOW(popup_window), "About");
-   
+
     gtk_window_set_resizable(GTK_WINDOW(popup_window), FALSE);
     // gtk_window_set_decorated (GTK_WINDOW (popup_window), FALSE);
     gtk_window_set_skip_taskbar_hint(GTK_WINDOW(popup_window), TRUE);
@@ -50,33 +110,33 @@ static void printz()
     GtkWidget *about = gtk_fixed_new();
     gtk_container_add(GTK_CONTAINER(popup_window), about);
     GtkWidget *aboutBtn = gtk_button_new_with_label("Close");
-   g_signal_connect(aboutBtn, "clicked", G_CALLBACK(closeAboutDialog), popup_window);
-    gtk_widget_set_size_request(aboutBtn,80,30);
-    gtk_fixed_put(GTK_FIXED(about), aboutBtn, 130, 350);
+    g_signal_connect(aboutBtn, "clicked", G_CALLBACK(closeAboutDialog), popup_window);
+
+    gtk_widget_set_size_request(aboutBtn, 100, 30);
+
+    gtk_fixed_put(GTK_FIXED(about), aboutBtn, 125, 350);
 
     GtkWidget *buildTime = gtk_label_new(NULL);
     gtk_widget_set_size_request(buildTime, 350, 30);
-  
+
     char str[50];
-    sprintf(str,"Build On : %s -- %s",__TIME__,__DATE__);
+    sprintf(str, "Build On : %s -- %s", __TIME__, __DATE__);
     const char *format = "<b>%s</b>";
-    char *markup = g_markup_printf_escaped (format, str);
+    char *markup = g_markup_printf_escaped(format, str);
     gtk_label_set_markup(GTK_LABEL(buildTime), markup);
     gtk_fixed_put(GTK_FIXED(about), buildTime, 0, 35);
 
-     GtkWidget *gtkVersion = gtk_label_new(NULL);
+    GtkWidget *gtkVersion = gtk_label_new(NULL);
     gtk_widget_set_size_request(gtkVersion, 350, 30);
-    sprintf(str,"Build On : %s -- %s",__TIME__,__DATE__);
-    markup = g_markup_printf_escaped (format, str);
+    sprintf(str, "Gtk Version : %d.%d.%d", gtk_get_major_version(), gtk_get_minor_version(), gtk_get_micro_version());
+    markup = g_markup_printf_escaped(format, str);
     gtk_label_set_markup(GTK_LABEL(gtkVersion), markup);
     gtk_fixed_put(GTK_FIXED(about), gtkVersion, 0, 70);
 
-
-
-     GtkWidget *tagLibVersion = gtk_label_new(NULL);
+    GtkWidget *tagLibVersion = gtk_label_new(NULL);
     gtk_widget_set_size_request(tagLibVersion, 350, 30);
-    sprintf(str,"Build On : %s -- %s",__TIME__,__DATE__);
-    markup = g_markup_printf_escaped (format, str);
+    sprintf(str, "Taglib Version : %d.%d", TAGLIB_MAJOR_VERSION, TAGLIB_MINOR_VERSION);
+    markup = g_markup_printf_escaped(format, str);
     gtk_label_set_markup(GTK_LABEL(tagLibVersion), markup);
     gtk_fixed_put(GTK_FIXED(about), tagLibVersion, 0, 105);
 
@@ -90,8 +150,6 @@ int main(int argc,
     /* GtkWidget is the storage type for widgets */
 
     GtkWidget *fixed;
-    GtkWidget *button;
-    gint i;
     GtkWidget *menu_bar, *menu_item, *file_menu, *help_menu;
 
     /* Initialise GTK */
@@ -103,16 +161,9 @@ int main(int argc,
     gtk_widget_set_size_request(window, 430, 600);
     gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
 
-    GClosure *closure = g_cclosure_new(printz, 0, 0);
-
-    // Set up the accelerator group.
+    GClosure *closure = g_cclosure_new(printz, NULL, NULL);
     GtkAccelGroup *accel_group = gtk_accel_group_new();
-    GtkAccelFlags accel_flags;
-    gtk_accel_group_connect(accel_group,
-                            GDK_KEY_S,
-                            GDK_CONTROL_MASK,
-                            accel_flags,
-                            closure);
+    gtk_accel_group_connect(accel_group, GDK_KEY_S, GDK_CONTROL_MASK, GTK_ACCEL_LOCKED, closure);
     gtk_window_add_accel_group(GTK_WINDOW(window), accel_group);
 
     /* Here we connect the "destroy" event to a signal handler */
@@ -140,7 +191,7 @@ int main(int argc,
 
     menu_item = gtk_menu_item_new_with_label("Open");
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), menu_item);
-    g_signal_connect(menu_item, "activate", G_CALLBACK(printz), NULL);
+    g_signal_connect(menu_item, "activate", G_CALLBACK(openDialog), NULL);
 
     menu_item = gtk_menu_item_new_with_label("Save");
     gtk_menu_shell_append(GTK_MENU_SHELL(file_menu), menu_item);
@@ -154,8 +205,6 @@ int main(int argc,
     gtk_menu_shell_append(GTK_MENU_SHELL(help_menu), menu_item);
     g_signal_connect(menu_item, "activate", G_CALLBACK(printz), NULL);
 
-    button = gtk_button_new_with_label("Press me");
-
     gtk_widget_set_size_request(menu_bar, 430, 30);
     gtk_fixed_put(GTK_FIXED(fixed), menu_bar, 0, 0);
 
@@ -164,7 +213,7 @@ int main(int argc,
     gtk_label_set_markup(GTK_LABEL(titleLabel), "<b>Title : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), titleLabel, 5, 35);
 
-    GtkWidget *titleEntry = gtk_entry_new();
+    titleEntry = gtk_entry_new();
     gtk_widget_set_size_request(titleEntry, 350, 30);
     gtk_fixed_put(GTK_FIXED(fixed), titleEntry, 65, 35);
 
@@ -173,7 +222,7 @@ int main(int argc,
     gtk_label_set_markup(GTK_LABEL(artistLabel), "<b>Artist : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), artistLabel, 5, 70);
 
-    GtkWidget *artistEntry = gtk_entry_new();
+    artistEntry = gtk_entry_new();
     gtk_widget_set_size_request(artistEntry, 350, 30);
     gtk_fixed_put(GTK_FIXED(fixed), artistEntry, 65, 70);
 
@@ -182,7 +231,7 @@ int main(int argc,
     gtk_label_set_markup(GTK_LABEL(ablumLabel), "<b>Ablum : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), ablumLabel, 5, 105);
 
-    GtkWidget *ablumEntry = gtk_entry_new();
+    ablumEntry = gtk_entry_new();
     gtk_widget_set_size_request(ablumEntry, 350, 30);
     gtk_fixed_put(GTK_FIXED(fixed), ablumEntry, 65, 105);
 
@@ -191,7 +240,7 @@ int main(int argc,
     gtk_label_set_markup(GTK_LABEL(yearLabel), "<b>Year : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), yearLabel, 5, 140);
 
-    GtkWidget *yearEntry = gtk_entry_new();
+    yearEntry = gtk_entry_new();
     gtk_widget_set_size_request(yearEntry, -1, 30);
     gtk_entry_set_max_length(GTK_ENTRY(yearEntry), 5);
     gtk_entry_set_width_chars(GTK_ENTRY(yearEntry), 5);
@@ -202,29 +251,29 @@ int main(int argc,
     gtk_label_set_markup(GTK_LABEL(trackLabel), "<b>Track : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), trackLabel, 5, 175);
 
-    GtkWidget *trackEntry = gtk_entry_new();
+    trackEntry = gtk_entry_new();
     gtk_widget_set_size_request(trackEntry, -1, 30);
     gtk_entry_set_max_length(GTK_ENTRY(trackEntry), 5);
     gtk_entry_set_width_chars(GTK_ENTRY(trackEntry), 5);
     gtk_fixed_put(GTK_FIXED(fixed), trackEntry, 65, 175);
 
-    GtkWidget *discLabel = gtk_label_new(NULL);
-    gtk_widget_set_size_request(discLabel, 60, 30);
-    gtk_label_set_markup(GTK_LABEL(discLabel), "<b>Disc : </b>");
-    gtk_fixed_put(GTK_FIXED(fixed), discLabel, 5, 210);
+    GtkWidget *genreLabel = gtk_label_new(NULL);
+    gtk_widget_set_size_request(genreLabel, 60, 30);
+    gtk_label_set_markup(GTK_LABEL(genreLabel), "<b>Genre : </b>");
+    gtk_fixed_put(GTK_FIXED(fixed), genreLabel, 5, 210);
 
-    GtkWidget *discEntry = gtk_entry_new();
-    gtk_widget_set_size_request(discEntry, -1, 30);
-    gtk_entry_set_max_length(GTK_ENTRY(discEntry), 5);
-    gtk_entry_set_width_chars(GTK_ENTRY(discEntry), 5);
-    gtk_fixed_put(GTK_FIXED(fixed), discEntry, 65, 210);
+    genreEntry = gtk_entry_new();
+    gtk_widget_set_size_request(genreEntry, -1, 30);
+   // gtk_entry_set_max_length(GTK_ENTRY(genreEntry), 5);
+    gtk_entry_set_width_chars(GTK_ENTRY(genreEntry), 5);
+    gtk_fixed_put(GTK_FIXED(fixed), genreEntry, 65, 210);
 
     GtkWidget *commentLabel = gtk_label_new(NULL);
     gtk_widget_set_size_request(commentLabel, 60, 30);
     gtk_label_set_markup(GTK_LABEL(commentLabel), "<b>Comment : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), commentLabel, 8, 245);
 
-    GtkWidget *commentEntry = gtk_entry_new();
+    commentEntry = gtk_entry_new();
     gtk_widget_set_size_request(commentEntry, 320, 30);
     gtk_fixed_put(GTK_FIXED(fixed), commentEntry, 95, 245);
 
@@ -234,10 +283,10 @@ int main(int argc,
 
     GtkWidget *albumArt = gtk_image_new();
     gtk_widget_set_size_request(albumArt, 300, 250);
-    gtk_image_set_from_file (GTK_IMAGE(albumArt),"file.jpg");
+    gtk_image_set_from_file(GTK_IMAGE(albumArt), "file.jpg");
     gtk_fixed_put(GTK_FIXED(fixed), albumArt, 65, 300);
 
-    GtkWidget *logLabel = gtk_label_new(NULL);
+    logLabel = gtk_label_new(NULL);
     gtk_widget_set_size_request(logLabel, 430, 30);
     gtk_label_set_markup(GTK_LABEL(logLabel), "<b>Info : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), logLabel, 0, 570);
