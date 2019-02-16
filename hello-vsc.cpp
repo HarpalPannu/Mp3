@@ -1,23 +1,23 @@
 #include <gtk/gtk.h>
-#include <tag.h>
-#include <tbytevector.h>
-
-#include <mpegfile.h>
-
-#include <id3v2tag.h>
-#include <id3v2frame.h>
-#include <id3v2header.h>
-
-#include <id3v1tag.h>
-
-#include <apetag.h>
-#include <fileref.h>
+#include <tbytevector.h> //ByteVector
+#include <mpegfile.h>    //mp3 file
+#include <id3v2tag.h>    //tag
+#include <id3v2frame.h>  //frame
+#include <attachedpictureframe.h>
+#include <stdio.h>
+#include <string.h>
+#include <glib.h>
+#include <gdk-pixbuf/gdk-pixbuf.h>
 /* I'm going to be lazy and use some global variables to
  * store the position of the widget within the fixed
  * container */
 gint x = 50;
 gint y = 50;
-GtkWidget *window, *titleEntry, *artistEntry, *ablumEntry, *yearEntry, *trackEntry, *genreEntry, *commentEntry, *logLabel;
+using namespace std;
+using namespace TagLib::ID3v2;
+GtkWidget *window, *titleEntry, *albumArt,*artistEntry, *ablumEntry, *yearEntry, *trackEntry, *genreEntry, *commentEntry, *logLabel;
+GdkPixbufLoader *loader;
+GdkPixbuf *pixbuf;
 /* This callback function moves the button to a new position
  * in the Fixed container. */
 
@@ -57,29 +57,65 @@ void openDialog()
         filename = gtk_file_chooser_get_filename(chooser);
         //  g_print(filename);
 
-        TagLib::FileRef f(filename);
-        if (!f.isNull())
-        {
-            gtk_entry_set_text(GTK_ENTRY(titleEntry), f.tag()->title().toCString());
-            gtk_entry_set_text(GTK_ENTRY(artistEntry), f.tag()->artist().toCString());
-            gtk_entry_set_text(GTK_ENTRY(ablumEntry), f.tag()->album().toCString());
-            gtk_entry_set_text(GTK_ENTRY(yearEntry), std::to_string(f.tag()->year()).c_str());
-            gtk_entry_set_text(GTK_ENTRY(trackEntry), std::to_string(f.tag()->track()).c_str());
-            gtk_entry_set_text(GTK_ENTRY(genreEntry), f.tag()->genre().toCString());
-            gtk_entry_set_text(GTK_ENTRY(commentEntry), f.tag()->comment().toCString());
+        TagLib::MPEG::File mp3File(filename);
+        Tag *mp3Tag;
+        FrameList listOfMp3Frames;
+        AttachedPictureFrame *pictureFrame;
 
+        mp3Tag = mp3File.ID3v2Tag();
+        cout << mp3Tag->album() << endl;
+        if (mp3Tag)
+        {
+            listOfMp3Frames = mp3Tag->frameListMap()["APIC"]; //look for picture frames only
+            if (!listOfMp3Frames.isEmpty())
+            {
+
+                pictureFrame = static_cast<AttachedPictureFrame *>(listOfMp3Frames.front()); //cast Frame * to AttachedPictureFrame*
+                loader = gdk_pixbuf_loader_new();
+                gdk_pixbuf_loader_write(loader, reinterpret_cast<const unsigned char *>(pictureFrame->picture().data()), pictureFrame->picture().size(), NULL);
+                pixbuf = gdk_pixbuf_loader_get_pixbuf(loader);
+               gtk_image_set_from_pixbuf(GTK_IMAGE(albumArt),gdk_pixbuf_scale_simple(pixbuf, 300, 250, GDK_INTERP_BILINEAR));
+            }
+
+            else
+            {
+                cerr << "there seem to be no picture frames (APIC) frames in this file" << endl
+                     << endl;
+            }
             const char *format = "<b>%s</b>";
-            char *markup = g_markup_printf_escaped(format,"Tags Loaded");
+            char *markup = g_markup_printf_escaped(format, "Tags Loaded");
             gtk_label_set_markup(GTK_LABEL(logLabel), markup);
+
+            gtk_entry_set_text(GTK_ENTRY(titleEntry), mp3Tag->title().toCString());
+            gtk_entry_set_text(GTK_ENTRY(artistEntry), mp3Tag->artist().toCString());
+            gtk_entry_set_text(GTK_ENTRY(ablumEntry), mp3Tag->album().toCString());
+            gtk_entry_set_text(GTK_ENTRY(yearEntry), std::to_string(mp3Tag->year()).c_str());
+            gtk_entry_set_text(GTK_ENTRY(trackEntry), std::to_string(mp3Tag->track()).c_str());
+            gtk_entry_set_text(GTK_ENTRY(genreEntry), mp3Tag->genre().toCString());
+            gtk_entry_set_text(GTK_ENTRY(commentEntry), mp3Tag->comment().toCString());
         }
         else
         {
-           
             const char *format = "<b>%s</b>";
-            char *markup = g_markup_printf_escaped(format,"Error Loading Tags");
+            char *markup = g_markup_printf_escaped(format, "Error Loading Tags Loaded");
             gtk_label_set_markup(GTK_LABEL(logLabel), markup);
-            
         }
+
+        // if (!f.isNull())
+        // {
+        //     
+
+        //     const char *format = "<b>%s</b>";
+        //     char *markup = g_markup_printf_escaped(format, "Tags Loaded");
+        //     gtk_label_set_markup(GTK_LABEL(logLabel), markup);
+        // }
+        // else
+        // {
+
+        //     const char *format = "<b>%s</b>";
+        //     char *markup = g_markup_printf_escaped(format, "Error Loading Tags");
+        //     gtk_label_set_markup(GTK_LABEL(logLabel), markup);
+        // }
     }
 
     gtk_widget_destroy(dialog);
@@ -264,7 +300,7 @@ int main(int argc,
 
     genreEntry = gtk_entry_new();
     gtk_widget_set_size_request(genreEntry, -1, 30);
-   // gtk_entry_set_max_length(GTK_ENTRY(genreEntry), 5);
+    // gtk_entry_set_max_length(GTK_ENTRY(genreEntry), 5);
     gtk_entry_set_width_chars(GTK_ENTRY(genreEntry), 5);
     gtk_fixed_put(GTK_FIXED(fixed), genreEntry, 65, 210);
 
@@ -281,15 +317,16 @@ int main(int argc,
     gtk_widget_set_size_request(infoLabel, 285, 100);
     gtk_fixed_put(GTK_FIXED(fixed), infoLabel, 130, 140);
 
-    GtkWidget *albumArt = gtk_image_new();
+    albumArt = gtk_image_new();
     gtk_widget_set_size_request(albumArt, 300, 250);
-    gtk_image_set_from_file(GTK_IMAGE(albumArt), "file.jpg");
     gtk_fixed_put(GTK_FIXED(fixed), albumArt, 65, 300);
 
     logLabel = gtk_label_new(NULL);
     gtk_widget_set_size_request(logLabel, 430, 30);
     gtk_label_set_markup(GTK_LABEL(logLabel), "<b>Info : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), logLabel, 0, 570);
+
+   
 
     /* Display the window */
     gtk_widget_show_all(window);
