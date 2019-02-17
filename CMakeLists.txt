@@ -22,3 +22,5 @@ add_executable(Hz ${SOURCES})
 target_link_libraries (Hz ${GTK3_LIBRARIES})
 target_link_libraries (Hz ${TAGLIB_LIBRARIES})
 target_link_libraries (Hz ${ZLIB_LIBRARIES})
+
+ADD_CUSTOM_TARGET(RUN ALL COMMAND ./Hz)

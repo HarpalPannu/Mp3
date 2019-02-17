@@ -8,18 +8,125 @@
 #include <string.h>
 #include <glib.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
-/* I'm going to be lazy and use some global variables to
- * store the position of the widget within the fixed
- * container */
-gint x = 50;
-gint y = 50;
+
+void quick_message(GtkWindow *parent, gchar *message)
+{
+    GtkWidget *dialog, *label, *content_area;
+    GtkDialogFlags flags;
+
+    // Create the widgets
+    flags = GTK_DIALOG_DESTROY_WITH_PARENT;
+    dialog = gtk_dialog_new_with_buttons("Message",
+                                         parent,
+                                         flags,
+                                         ("_OK"),
+                                         GTK_RESPONSE_NONE,
+                                         NULL);
+    content_area = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+    label = gtk_label_new(message);
+    gtk_label_set_line_wrap (GTK_LABEL(label),TRUE);
+    gtk_widget_set_size_request(dialog,200,300);
+    // Ensure that the dialog box is destroyed when the user responds
+
+    g_signal_connect_swapped(dialog,
+                             "response",
+                             G_CALLBACK(gtk_widget_destroy),
+                             dialog);
+
+    // Add the label, and show everything we’ve added
+
+    gtk_container_add(GTK_CONTAINER(content_area), label);
+    gtk_widget_show_all(dialog);
+}
+
 using namespace std;
 using namespace TagLib::ID3v2;
-GtkWidget *window, *titleEntry, *albumArt,*artistEntry, *ablumEntry, *yearEntry, *trackEntry, *genreEntry, *commentEntry, *logLabel;
+GtkWidget *window, *titleEntry, *albumArt, *artistEntry, *ablumEntry, *yearEntry, *trackEntry, *genreEntry, *commentEntry, *logLabel;
 GdkPixbufLoader *loader;
 GdkPixbuf *pixbuf;
-/* This callback function moves the button to a new position
- * in the Fixed container. */
+
+void saveFile(GtkWidget *event_box, gpointer data)
+{
+
+    g_print("Save File");
+    gtk_widget_destroy(GTK_WIDGET(data));
+
+    GtkWidget *dialog;
+    GtkFileChooser *chooser;
+    GtkFileChooserAction action = GTK_FILE_CHOOSER_ACTION_SAVE;
+    gint res;
+
+    dialog = gtk_file_chooser_dialog_new("Save File",
+                                         GTK_WINDOW(window),
+                                         action,
+                                         ("_Cancel"),
+                                         GTK_RESPONSE_CANCEL,
+                                         ("_Save"),
+                                         GTK_RESPONSE_ACCEPT,
+                                         NULL);
+    chooser = GTK_FILE_CHOOSER(dialog);
+
+    gtk_file_chooser_set_do_overwrite_confirmation(chooser, TRUE);
+
+    gtk_file_chooser_set_filename(chooser,
+                                  "existing_filename");
+
+    res = gtk_dialog_run(GTK_DIALOG(dialog));
+    if (res == GTK_RESPONSE_ACCEPT)
+    {
+        char *filename;
+
+        filename = gtk_file_chooser_get_filename(chooser);
+
+        GError *err = NULL;
+        if (!gdk_pixbuf_save(pixbuf, filename, "jpeg", &err, NULL))
+        {
+            g_print("Err %s", err->message);
+            quick_message(GTK_WINDOW(window),err->message);
+        }
+        g_free(filename);
+    }
+
+    gtk_widget_destroy(dialog);
+}
+
+static gboolean button_press_callback(GtkWidget *event_box, GdkEventButton *event, gpointer data)
+{
+
+    if (event->type == GDK_BUTTON_PRESS && event->button == 3)
+    {
+        g_print("Left\n");
+        GtkWidget *popup_window;
+
+        popup_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+
+        gtk_window_set_resizable(GTK_WINDOW(popup_window), FALSE);
+        gtk_window_set_decorated(GTK_WINDOW(popup_window), FALSE);
+        gtk_window_set_skip_taskbar_hint(GTK_WINDOW(popup_window), TRUE);
+        gtk_window_set_skip_pager_hint(GTK_WINDOW(popup_window), TRUE);
+        gtk_widget_set_size_request(popup_window, 50, 50);
+        gtk_window_set_attached_to(GTK_WINDOW(popup_window), albumArt);
+        gtk_window_set_position(GTK_WINDOW(popup_window), GTK_WIN_POS_MOUSE);
+
+        gtk_widget_set_events(popup_window, GDK_FOCUS_CHANGE_MASK);
+        // g_signal_connect(G_OBJECT(popup_window),
+        //                  "focus-out-event",NULL,
+        //                  NULL);
+
+        GtkWidget *box = gtk_button_box_new(GTK_ORIENTATION_VERTICAL);
+        gtk_container_add(GTK_CONTAINER(popup_window), box);
+
+        GtkWidget *button = gtk_button_new_with_label("Save");
+        GtkWidget *buttons = gtk_button_new_with_label("Replace");
+        gtk_container_add(GTK_CONTAINER(box), button);
+        gtk_container_add(GTK_CONTAINER(box), buttons);
+        g_signal_connect(button, "clicked", G_CALLBACK(saveFile), popup_window);
+        gtk_widget_show_all(popup_window);
+        gtk_widget_grab_focus(popup_window);
+        return TRUE; //or false
+    }
+    return TRUE;
+}
 
 gboolean on_popup_focus_out(GtkWidget *widget,
                             GdkEventFocus *event,
@@ -55,8 +162,6 @@ void openDialog()
         char *filename;
         GtkFileChooser *chooser = GTK_FILE_CHOOSER(dialog);
         filename = gtk_file_chooser_get_filename(chooser);
-        //  g_print(filename);
-
         TagLib::MPEG::File mp3File(filename);
         Tag *mp3Tag;
         FrameList listOfMp3Frames;
@@ -72,20 +177,20 @@ void openDialog()
 
                 pictureFrame = static_cast<AttachedPictureFrame *>(listOfMp3Frames.front()); //cast Frame * to AttachedPictureFrame*
                 loader = gdk_pixbuf_loader_new();
-                gdk_pixbuf_loader_write(loader, reinterpret_cast<const unsigned char *>(pictureFrame->picture().data()), pictureFrame->picture().size(), NULL);
+                gdk_pixbuf_loader_write_bytes(loader, g_bytes_new(pictureFrame->picture().data(), pictureFrame->picture().size()), NULL);
                 pixbuf = gdk_pixbuf_loader_get_pixbuf(loader);
-               gtk_image_set_from_pixbuf(GTK_IMAGE(albumArt),gdk_pixbuf_scale_simple(pixbuf, 300, 250, GDK_INTERP_BILINEAR));
+                gtk_image_set_from_pixbuf(GTK_IMAGE(albumArt), gdk_pixbuf_scale_simple(pixbuf, 300, 250, GDK_INTERP_BILINEAR));
             }
 
             else
             {
                 cerr << "there seem to be no picture frames (APIC) frames in this file" << endl
                      << endl;
+                gtk_image_clear(GTK_IMAGE(albumArt));
             }
             const char *format = "<b>%s</b>";
             char *markup = g_markup_printf_escaped(format, "Tags Loaded");
             gtk_label_set_markup(GTK_LABEL(logLabel), markup);
-
             gtk_entry_set_text(GTK_ENTRY(titleEntry), mp3Tag->title().toCString());
             gtk_entry_set_text(GTK_ENTRY(artistEntry), mp3Tag->artist().toCString());
             gtk_entry_set_text(GTK_ENTRY(ablumEntry), mp3Tag->album().toCString());
@@ -100,22 +205,6 @@ void openDialog()
             char *markup = g_markup_printf_escaped(format, "Error Loading Tags Loaded");
             gtk_label_set_markup(GTK_LABEL(logLabel), markup);
         }
-
-        // if (!f.isNull())
-        // {
-        //     
-
-        //     const char *format = "<b>%s</b>";
-        //     char *markup = g_markup_printf_escaped(format, "Tags Loaded");
-        //     gtk_label_set_markup(GTK_LABEL(logLabel), markup);
-        // }
-        // else
-        // {
-
-        //     const char *format = "<b>%s</b>";
-        //     char *markup = g_markup_printf_escaped(format, "Error Loading Tags");
-        //     gtk_label_set_markup(GTK_LABEL(logLabel), markup);
-        // }
     }
 
     gtk_widget_destroy(dialog);
@@ -123,7 +212,7 @@ void openDialog()
 
 static void printz()
 {
-    g_print("hz\n");
+
     GtkWidget *popup_window;
 
     popup_window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
@@ -319,14 +408,21 @@ int main(int argc,
 
     albumArt = gtk_image_new();
     gtk_widget_set_size_request(albumArt, 300, 250);
-    gtk_fixed_put(GTK_FIXED(fixed), albumArt, 65, 300);
+
+    GtkWidget *event_box = gtk_event_box_new();
+
+    gtk_container_add(GTK_CONTAINER(event_box), albumArt);
+
+    g_signal_connect(G_OBJECT(event_box),
+                     "button_press_event",
+                     G_CALLBACK(button_press_callback),
+                     albumArt);
+    gtk_fixed_put(GTK_FIXED(fixed), event_box, 65, 300);
 
     logLabel = gtk_label_new(NULL);
     gtk_widget_set_size_request(logLabel, 430, 30);
     gtk_label_set_markup(GTK_LABEL(logLabel), "<b>Info : </b>");
     gtk_fixed_put(GTK_FIXED(fixed), logLabel, 0, 570);
-
-   
 
     /* Display the window */
     gtk_widget_show_all(window);
